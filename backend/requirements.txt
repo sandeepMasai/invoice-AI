@@ -1,0 +1,12 @@
+fastapi>=0.109,<0.116
+uvicorn[standard]>=0.27,<0.33
+python-multipart>=0.0.9
+pydantic>=2.5,<3
+pydantic-settings>=2.2,<3
+cryptography>=42,<45
+httpx>=0.26,<0.28
+supabase>=2.3,<3
+openai>=1.40,<2
+Pillow>=10,<12
+pymupdf>=1.24,<2
+pytesseract>=0.3.10

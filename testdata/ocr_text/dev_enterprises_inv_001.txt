@@ -1,0 +1,12 @@
+Dev Enterprises, Alwar
+Email: sk245444@gmail.com
+Invoice No: INV-001
+Date: 01 April 2026
+
+Item Quantity Price Total
+Water Bottle 10 ₹20 ₹200
+RO Service 1 ₹800 ₹800
+Installation 1 ₹500 ₹500
+
+Total Amount: ₹1500
+

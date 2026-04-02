@@ -1,0 +1,33 @@
+[
+  {
+    "id": "dev-enterprises-inv-001",
+    "description": "Simple INR invoice with line items and total.",
+    "ocr_text_file": "ocr_text/dev_enterprises_inv_001.txt",
+    "expected": {
+      "vendor_name": "Dev Enterprises, Alwar",
+      "invoice_number": "INV-001",
+      "invoice_date": "2026-04-01",
+      "total_amount": 1500,
+      "currency": "INR",
+      "line_items": [
+        { "description": "Water Bottle", "quantity": 10, "unit_price": 20, "amount": 200 },
+        { "description": "RO Service", "quantity": 1, "unit_price": 800, "amount": 800 },
+        { "description": "Installation", "quantity": 1, "unit_price": 500, "amount": 500 }
+      ]
+    }
+  },
+  {
+    "id": "missing-fields",
+    "description": "Invoice with missing date/number; should return nulls for those fields.",
+    "ocr_text_file": "ocr_text/missing_fields.txt",
+    "expected": {
+      "vendor_name": "Acme Supplies",
+      "invoice_number": null,
+      "invoice_date": null,
+      "total_amount": 299.99,
+      "currency": "USD",
+      "line_items": []
+    }
+  }
+]
+
