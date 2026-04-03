@@ -74,19 +74,54 @@ def vendor_display_from_row(row: dict[str, Any]) -> str | None:
 def normalize_invoice_row_for_api(row: dict[str, Any]) -> dict[str, Any]:
     """Add API aliases and unpacked json_data onto a raw Supabase row (non-destructive copy)."""
     out = dict(row)
-    line_items, extraction, meta = unpack_invoice_json_data(row.get("json_data"))
-    out["vendor_raw"] = vendor_display_from_row(row)
+    line_items, extraction_jd, meta = unpack_invoice_json_data(row.get("json_data"))
+
+    # Legacy rows store line_items / extraction as top-level columns; modern rows use json_data.
+    if not line_items and isinstance(row.get("line_items"), list):
+        line_items = row["line_items"]
+    row_extraction = row.get("extraction")
+    row_extraction = _as_dict(row_extraction) if row_extraction else {}
+    extraction = {**extraction_jd, **row_extraction} if row_extraction else extraction_jd
+
+    vdisp = vendor_display_from_row(row)
+    if vdisp is None or (isinstance(vdisp, str) and not str(vdisp).strip()):
+        ev = extraction.get("vendor_name")
+        if ev is not None and str(ev).strip():
+            vdisp = str(ev).strip()
+    out["vendor_raw"] = vdisp
+
     out["line_items"] = line_items
     out["extraction"] = extraction
     out["_json_meta"] = meta
-    out["confidence"] = meta.get("confidence")
-    out["is_duplicate_candidate"] = bool(meta.get("is_duplicate_candidate", False))
-    out["is_duplicate_of"] = meta.get("is_duplicate_of")
-    out["format_id"] = meta.get("format_id")
-    out["invoice_number"] = row.get("invoice_number") if row.get("invoice_number") is not None else meta.get("invoice_number")
-    out["due_date"] = row.get("due_date") if row.get("due_date") is not None else meta.get("due_date")
-    out["subtotal"] = row.get("subtotal") if row.get("subtotal") is not None else meta.get("subtotal")
-    out["tax_total"] = row.get("tax_total") if row.get("tax_total") is not None else meta.get("tax_total")
+
+    conf = meta.get("confidence")
+    if conf is None and row.get("confidence") is not None:
+        conf = row.get("confidence")
+    out["confidence"] = conf
+
+    out["is_duplicate_candidate"] = bool(meta.get("is_duplicate_candidate") or row.get("is_duplicate_candidate"))
+    out["is_duplicate_of"] = meta.get("is_duplicate_of") if meta.get("is_duplicate_of") is not None else row.get("is_duplicate_of")
+    out["format_id"] = meta.get("format_id") if meta.get("format_id") is not None else row.get("format_id")
+
+    def _scalar(field: str) -> Any:
+        v = row.get(field)
+        if v is not None and v != "":
+            return v
+        v = meta.get(field)
+        if v is not None and v != "":
+            return v
+        v = extraction.get(field) if extraction else None
+        if v is not None and v != "":
+            return v
+        return row.get(field)
+
+    out["invoice_number"] = _scalar("invoice_number")
+    out["due_date"] = _scalar("due_date")
+    out["invoice_date"] = _scalar("invoice_date")
+    out["currency"] = _scalar("currency")
+    out["subtotal"] = _scalar("subtotal")
+    out["tax_total"] = _scalar("tax_total")
+    out["total_amount"] = _scalar("total_amount")
     return out
 
 

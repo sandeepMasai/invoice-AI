@@ -10,6 +10,9 @@ import {
 import type { AuthError, Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
 
+/** Magic-link landing URL (must match Supabase Auth redirect allow list). */
+const PRODUCTION_EMAIL_REDIRECT = "https://invoice-ai-1-4fpp.onrender.com";
+
 function friendlyAuthEmailError(error: AuthError): string {
   const msg = (error.message || "").toLowerCase();
   const code = "code" in error ? String((error as { code?: string }).code || "") : "";
@@ -53,10 +56,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const signInMagicLink = useCallback(async (email: string) => {
-    const redirect = `${window.location.origin}/`;
+    const local =
+      window.location.hostname === "localhost" ||
+      window.location.hostname === "127.0.0.1";
+    const emailRedirectTo = local
+      ? `${window.location.origin}/`
+      : `${PRODUCTION_EMAIL_REDIRECT.replace(/\/$/, "")}/`;
     const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: redirect },
+      options: { emailRedirectTo },
     });
     if (error) throw new Error(friendlyAuthEmailError(error));
   }, []);

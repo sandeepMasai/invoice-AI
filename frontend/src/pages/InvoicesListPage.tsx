@@ -1,10 +1,35 @@
 import { InvoiceTable } from "@/components/InvoiceTable";
 import { useInvoices } from "@/hooks/useInvoices";
+import type { InvoiceRow } from "@/hooks/useInvoices";
 import { useMemo } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
+
+function formatShortDate(iso: string | null | undefined): string {
+  if (!iso?.trim()) return "—";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso.trim();
+  return d.toLocaleDateString(undefined, { year: "numeric", month: "short", day: "numeric" });
+}
+
+/** Prefer invoice #; otherwise distinguish rows without repeating the word “Invoice” only. */
+function invoiceCardTitle(inv: InvoiceRow): string {
+  const num = String(inv.invoice_number ?? "").trim();
+  if (num) return num;
+  const uploaded = formatShortDate(inv.created_at);
+  if (uploaded !== "—") return `Uploaded ${uploaded}`;
+  return `Document ${inv.id.slice(0, 8)}…`;
+}
+
+function invoiceCardDateLine(inv: InvoiceRow): string {
+  const invDate = String(inv.invoice_date ?? "").trim();
+  if (invDate) return invDate;
+  const up = formatShortDate(inv.created_at);
+  return up !== "—" ? `Invoice date not set · added ${up}` : "Date not available";
+}
 
 export function InvoicesListPage() {
   const { items, loading, error, refresh } = useInvoices();
+  const rows = Array.isArray(items) ? items : [];
   const [searchParams, setSearchParams] = useSearchParams();
   const tab = (searchParams.get("tab") || "invoices").toLowerCase();
   const invoiceView = (searchParams.get("view") || "grid").toLowerCase(); // grid | table
@@ -21,10 +46,10 @@ export function InvoicesListPage() {
         currencyTotals: Record<string, number>;
       }
     >();
-    for (const r of items) {
-      const name = (r.vendor_raw || "Unknown vendor").trim() || "Unknown vendor";
+    for (const r of rows) {
+      const name = String(r.vendor_raw || "Unknown vendor").trim() || "Unknown vendor";
       const key = name.toLowerCase();
-      const cur = (r.currency || "—").trim() || "—";
+      const cur = String(r.currency || "—").trim() || "—";
       const amt = typeof r.total_amount === "number" ? r.total_amount : 0;
       const curKey = cur || "—";
 
@@ -54,10 +79,10 @@ export function InvoicesListPage() {
     });
     list.sort((a, b) => b.totalPrimary - a.totalPrimary);
     return list;
-  }, [items]);
+  }, [rows]);
 
   const filteredInvoices = useMemo(() => {
-    let list = items;
+    let list = rows;
 
     if (invFilter === "duplicates") {
       list = list.filter((r) => r.is_duplicate_candidate);
@@ -67,24 +92,24 @@ export function InvoicesListPage() {
 
     if (q) {
       list = list.filter((r) => {
-        const vendor = (r.vendor_raw || "").toLowerCase();
-        const inv = (r.invoice_number || "").toLowerCase();
-        const date = (r.invoice_date || "").toLowerCase();
+        const vendor = String(r.vendor_raw ?? "").toLowerCase();
+        const inv = String(r.invoice_number ?? "").toLowerCase();
+        const date = String(r.invoice_date ?? "").toLowerCase();
         return vendor.includes(q) || inv.includes(q) || date.includes(q);
       });
     }
 
     // newest first (created_at ISO string)
     return [...list].sort((a, b) => (a.created_at < b.created_at ? 1 : -1));
-  }, [items, invFilter, q]);
+  }, [rows, invFilter, q]);
 
   const invoiceGrid = useMemo(() => {
     if (!filteredInvoices.length) return null;
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {filteredInvoices.map((inv) => {
-          const vendor = inv.vendor_raw || "Unknown vendor";
-          const date = inv.invoice_date || "—";
+          const vendor = String(inv.vendor_raw ?? "").trim() || "Unknown vendor";
+          const dateLine = invoiceCardDateLine(inv);
           const amount =
             inv.total_amount != null ? `${inv.currency || ""} ${inv.total_amount}`.trim() : "—";
           const conf = inv.confidence ?? 0;
@@ -97,15 +122,15 @@ export function InvoicesListPage() {
                   ? "text-red-600 dark:text-red-400"
                   : "text-slate-400 dark:text-slate-500";
           return (
-            <a
+            <Link
               key={inv.id}
-              href={`/invoices/${inv.id}`}
-              className="card-gradient rounded-2xl p-6 transition hover:-translate-y-0.5 hover:shadow-md"
+              to={`/invoices/${inv.id}`}
+              className="card-gradient rounded-2xl p-6 transition hover:-translate-y-0.5 hover:shadow-md block"
             >
               <div className="flex items-start justify-between mb-4">
                 <div>
-                  <p className="font-bold text-indigo-600 dark:text-indigo-400">{inv.invoice_number || "Invoice"}</p>
-                  <p className="text-sm text-slate-500 dark:text-slate-400">{date}</p>
+                  <p className="font-bold text-indigo-600 dark:text-indigo-400">{invoiceCardTitle(inv)}</p>
+                  <p className="text-sm text-slate-500 dark:text-slate-400">{dateLine}</p>
                 </div>
                 {inv.is_duplicate_candidate ? (
                   <span className="px-3 py-1 rounded-full text-xs font-medium bg-gradient-to-r from-amber-100 to-yellow-100 text-amber-800 dark:from-amber-900/50 dark:to-yellow-900/40 dark:text-amber-200">
@@ -134,7 +159,7 @@ export function InvoicesListPage() {
                   <p className={`text-lg font-bold ${confClass}`}>{conf ? `${conf}%` : "—"}</p>
                 </div>
               </div>
-            </a>
+            </Link>
           );
         })}
       </div>

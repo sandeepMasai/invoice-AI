@@ -29,8 +29,12 @@ export function useInvoices() {
     setLoading(true);
     setError(null);
     try {
-      const data = (await api.listInvoices()) as InvoiceRow[];
-      setItems(data);
+      const data = await api.listInvoices();
+      const rows = Array.isArray(data) ? (data as InvoiceRow[]) : [];
+      if (!Array.isArray(data)) {
+        console.warn("listInvoices: expected array, got", typeof data, data);
+      }
+      setItems(rows);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Failed to load");
     } finally {
