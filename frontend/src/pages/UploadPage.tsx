@@ -19,7 +19,7 @@ export function UploadPage() {
         <FileUploader
           onDone={() => {
             void refresh();
-            navigate("/");
+            navigate("/", { state: { pendingProcessing: true } });
           }}
         />
       </div>

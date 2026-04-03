@@ -1,8 +1,10 @@
 import { FileUploader } from "@/components/FileUploader";
 import { useInvoices } from "@/hooks/useInvoices";
+import { useNavigate } from "react-router-dom";
 
 export function BatchPage() {
   const { refresh } = useInvoices();
+  const navigate = useNavigate();
   return (
     <div className="space-y-4 sm:space-y-6 min-w-0">
       <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -14,7 +16,13 @@ export function BatchPage() {
       </div>
 
       <div className="card-gradient rounded-xl sm:rounded-2xl p-4 sm:p-6 max-w-2xl mx-auto w-full">
-        <FileUploader multiple onDone={() => void refresh()} />
+        <FileUploader
+          multiple
+          onDone={() => {
+            void refresh();
+            navigate("/", { state: { pendingProcessing: true } });
+          }}
+        />
       </div>
     </div>
   );

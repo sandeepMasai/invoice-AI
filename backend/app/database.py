@@ -304,15 +304,23 @@ def _float_amount(v: object) -> float:
 
 
 def _analytics_monthly_from_invoices(sb: Client, user_id: str) -> list[dict[str, Any]]:
-    rows = _fetch_invoices_paginated(sb, user_id, "invoice_date,currency,total_amount")
+    rows: list[dict[str, Any]] = []
+    for cols in ("invoice_date,currency,total_amount,json_data", "invoice_date,currency,total_amount"):
+        try:
+            rows = _fetch_invoices_paginated(sb, user_id, cols)
+            break
+        except APIError as e:
+            if not supabase_rest_schema_error(e):
+                raise
+            continue
     agg: dict[tuple[str, str], list[float | int]] = defaultdict(lambda: [0.0, 0])
     for r in rows:
-        mk = _parse_month_key(r.get("invoice_date"))
+        mk = _parse_month_key(_invoice_row_invoice_date(r))
         if not mk:
             continue
-        cur = (r.get("currency") or "UNKNOWN") or "UNKNOWN"
+        cur = _invoice_row_currency_label(r)
         k = (mk, cur)
-        agg[k][0] = float(agg[k][0]) + _float_amount(r.get("total_amount"))
+        agg[k][0] = float(agg[k][0]) + _invoice_row_total_amount(r)
         agg[k][1] = int(agg[k][1]) + 1
     keys = sorted(agg.keys(), key=lambda x: x[0], reverse=True)
     return [
@@ -333,6 +341,34 @@ def _invoice_row_total_amount(r: dict[str, Any]) -> float:
     if isinstance(meta, dict) and meta.get("total_amount") is not None:
         return _float_amount(meta.get("total_amount"))
     return 0.0
+
+
+def _invoice_row_invoice_date(r: dict[str, Any]) -> object | None:
+    v = r.get("invoice_date")
+    if v is not None and str(v).strip():
+        return v
+    _li, ext, meta = unpack_invoice_json_data(r.get("json_data"))
+    if isinstance(ext, dict):
+        d = ext.get("invoice_date")
+        if d is not None and str(d).strip():
+            return d
+    if isinstance(meta, dict):
+        d = meta.get("invoice_date")
+        if d is not None and str(d).strip():
+            return d
+    return None
+
+
+def _invoice_row_currency_label(r: dict[str, Any]) -> str:
+    c = r.get("currency")
+    if c is not None and str(c).strip():
+        return str(c).strip()
+    _li, ext, _meta = unpack_invoice_json_data(r.get("json_data"))
+    if isinstance(ext, dict) and ext.get("currency") is not None:
+        s = str(ext.get("currency")).strip()
+        if s:
+            return s
+    return "UNKNOWN"
 
 
 def _invoice_row_vendor_display(r: dict[str, Any]) -> str:
@@ -409,11 +445,19 @@ def _analytics_vendors_from_invoices(sb: Client, user_id: str, limit: int) -> li
 
 
 def _analytics_currencies_from_invoices(sb: Client, user_id: str) -> list[dict[str, Any]]:
-    rows = _fetch_invoices_paginated(sb, user_id, "currency,total_amount")
+    rows: list[dict[str, Any]] = []
+    for cols in ("currency,total_amount,json_data", "currency,total_amount"):
+        try:
+            rows = _fetch_invoices_paginated(sb, user_id, cols)
+            break
+        except APIError as e:
+            if not supabase_rest_schema_error(e):
+                raise
+            continue
     agg: dict[str, list[float | int]] = defaultdict(lambda: [0.0, 0])
     for r in rows:
-        cur = (r.get("currency") or "UNKNOWN") or "UNKNOWN"
-        agg[cur][0] = float(agg[cur][0]) + _float_amount(r.get("total_amount"))
+        cur = _invoice_row_currency_label(r)
+        agg[cur][0] = float(agg[cur][0]) + _invoice_row_total_amount(r)
         agg[cur][1] = int(agg[cur][1]) + 1
     keys = sorted(agg.keys(), key=lambda c: float(agg[c][0]), reverse=True)
     return [
@@ -431,7 +475,17 @@ def analytics_monthly_spend(sb: Client, user_id: str) -> list[dict[str, Any]]:
             .order("month", desc=True)
             .execute()
         )
-        return res.data or []
+        data = res.data or []
+        # View only includes rows with non-null invoice_date on the table; use Python path when empty.
+        if not data:
+            try:
+                alt = _analytics_monthly_from_invoices(sb, user_id)
+                if alt:
+                    log.debug("analytics_monthly_spend: using invoice-row aggregation (view empty)")
+                    return alt
+            except APIError as e2:
+                log.warning("monthly empty view + fallback failed: %s", e2.message)
+        return data
     except APIError as e:
         if not supabase_rest_schema_error(e):
             raise
@@ -488,7 +542,16 @@ def analytics_currency_totals(sb: Client, user_id: str) -> list[dict[str, Any]]:
             .order("total_spend", desc=True)
             .execute()
         )
-        return res.data or []
+        data = res.data or []
+        if not data:
+            try:
+                alt = _analytics_currencies_from_invoices(sb, user_id)
+                if alt:
+                    log.debug("analytics_currency_totals: using invoice-row aggregation (view empty)")
+                    return alt
+            except APIError as e2:
+                log.warning("currency empty view + fallback failed: %s", e2.message)
+        return data
     except APIError as e:
         if not supabase_rest_schema_error(e):
             raise

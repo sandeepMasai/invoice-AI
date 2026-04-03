@@ -1,10 +1,10 @@
-import { useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { CurrencyBreakdownChart } from "@/components/Charts/CurrencyBreakdownChart";
 import { MonthlyTrendChart } from "@/components/Charts/MonthlyTrendChart";
 import { SpendByVendorChart } from "@/components/Charts/SpendByVendorChart";
 import { useAuth } from "@/hooks/useAuth";
 import { api } from "@/services/api";
-import { useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 
 type Summary = {
   total_invoices: number;
@@ -117,8 +117,13 @@ export function DashboardPage() {
   const [data, setData] = useState<Summary | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [searchParams, setSearchParams] = useSearchParams();
+  const location = useLocation();
+  const navigate = useNavigate();
   const tabRaw = (searchParams.get("tab") || "dashboard").toLowerCase();
   const tab = tabRaw === "settings" ? "dashboard" : tabRaw;
+  const pendingProcessing = Boolean(
+    (location.state as { pendingProcessing?: boolean } | null)?.pendingProcessing,
+  );
 
   useEffect(() => {
     if (searchParams.get("tab")?.toLowerCase() === "settings") {
@@ -128,15 +133,10 @@ export function DashboardPage() {
     }
   }, [searchParams, setSearchParams]);
 
-  useEffect(() => {
-    if (authLoading) return;
-    if (!session?.access_token) {
-      setErr("Not signed in — open Login and complete magic link.");
-      return;
-    }
-    let cancelled = false;
-    setErr(null);
-    (async () => {
+  const loadSummary = useCallback(
+    async (opts?: { soft?: boolean }) => {
+      if (!session?.access_token) return;
+      if (!opts?.soft) setErr(null);
       try {
         const raw = (await api.analyticsSummary()) as Partial<Summary> & {
           topVendors?: Summary["top_vendors"];
@@ -151,15 +151,67 @@ export function DashboardPage() {
           top_vendors: Array.isArray(topVendorsRaw) ? topVendorsRaw : [],
           currencies: Array.isArray(raw.currencies) ? raw.currencies : [],
         };
-        if (!cancelled) setData(s);
+        setData(s);
+        setErr(null);
       } catch (e) {
-        if (!cancelled) setErr(e instanceof Error ? e.message : "Failed to load analytics");
+        if (opts?.soft) return;
+        setErr(e instanceof Error ? e.message : "Failed to load analytics");
       }
+    },
+    [session?.access_token],
+  );
+
+  useEffect(() => {
+    if (authLoading) return;
+    if (!session?.access_token) {
+      setErr("Not signed in — open Login and complete magic link.");
+      return;
+    }
+    let cancelled = false;
+    void (async () => {
+      await loadSummary();
+      if (cancelled) return;
     })();
     return () => {
       cancelled = true;
     };
-  }, [authLoading, session?.access_token]);
+  }, [authLoading, session?.access_token, loadSummary]);
+
+  // Processing runs in the background; poll briefly after upload so counts/charts update without a full reload.
+  useEffect(() => {
+    if (!pendingProcessing || authLoading || !session?.access_token) return;
+    let n = 0;
+    const id = window.setInterval(() => {
+      n += 1;
+      void loadSummary({ soft: true });
+      if (n >= 18) window.clearInterval(id);
+    }, 2500);
+    const clearState = window.setTimeout(() => {
+      navigate(`${location.pathname}${location.search}`, { replace: true, state: {} });
+    }, 47000);
+    return () => {
+      window.clearInterval(id);
+      window.clearTimeout(clearState);
+    };
+  }, [
+    pendingProcessing,
+    authLoading,
+    session?.access_token,
+    loadSummary,
+    navigate,
+    location.pathname,
+    location.search,
+  ]);
+
+  useEffect(() => {
+    const onVis = () => {
+      if (document.visibilityState === "visible" && session?.access_token && !authLoading) {
+        void loadSummary({ soft: true });
+      }
+    };
+    document.addEventListener("visibilitychange", onVis);
+    return () => document.removeEventListener("visibilitychange", onVis);
+  }, [session?.access_token, authLoading, loadSummary]);
 
   const analyticsCards = useMemo(() => {
     if (!data) {
