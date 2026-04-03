@@ -7,8 +7,22 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import type { Session, User } from "@supabase/supabase-js";
+import type { AuthError, Session, User } from "@supabase/supabase-js";
 import { supabase } from "@/lib/supabaseClient";
+
+function friendlyAuthEmailError(error: AuthError): string {
+  const msg = (error.message || "").toLowerCase();
+  const code = "code" in error ? String((error as { code?: string }).code || "") : "";
+  if (
+    code === "over_email_send_rate_limit" ||
+    msg.includes("rate limit") ||
+    msg.includes("email rate") ||
+    msg.includes("too many requests")
+  ) {
+    return "Email rate limit reached. Wait a few minutes before requesting another link, or ask your project admin to enable custom SMTP in Supabase (Authentication → Emails) for higher limits.";
+  }
+  return error.message;
+}
 
 type AuthState = {
   user: User | null;
@@ -44,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       email,
       options: { emailRedirectTo: redirect },
     });
-    if (error) throw error;
+    if (error) throw new Error(friendlyAuthEmailError(error));
   }, []);
 
   const signOut = useCallback(async () => {
